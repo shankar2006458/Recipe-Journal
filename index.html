@@ -1273,6 +1273,27 @@
             background: var(--gold);
             box-shadow: 0 0 12px var(--gold-glow);
         }
+
+        .btn-tutorial {
+            background: transparent;
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-family: var(--font-body);
+            font-size: 0.85rem;
+            font-weight: 500;
+            letter-spacing: 0.03em;
+            transition: all var(--transition-fast);
+            padding: 10px;
+        }
+
+        .btn-tutorial:hover {
+            border-color: #ff0000;
+            color: #ff6b6b;
+            background: rgba(255, 0, 0, 0.05);
+            box-shadow: 0 0 12px rgba(255, 0, 0, 0.2);
+        }
     </style>
 </head>
 <body>
@@ -1408,6 +1429,7 @@
         (function() {
             // ──────────────── STATE ────────────────
             const API_BASE = 'https://www.themealdb.com/api/json/v1/1';
+            const POPULAR_SEARCHES = ['Chicken', 'Pasta', 'Cake', 'Pizza', 'Rice', 'Soup'];
             const STORAGE_FAVORITES = 'recipeJournal_favorites';
             const STORAGE_HISTORY = 'recipeJournal_searchHistory';
             const MAX_HISTORY = 6;
@@ -1550,6 +1572,44 @@
                 return data.meals || [];
             }
             
+            async function loadPopularRecipes() {
+                try {
+                    // Show loading skeletons while fetching
+                    renderSkeletons(6);
+                    
+                    const allMeals = [];
+                    
+                    // Fetch recipes for first 3 popular searches (to keep it fast)
+                    const searchesToFetch = POPULAR_SEARCHES.slice(0, 3);
+                    const fetchPromises = searchesToFetch.map(query => 
+                        fetchRecipes(query).catch(() => [])
+                    );
+                    
+                    const results = await Promise.all(fetchPromises);
+                    const combined = results.flat();
+                    
+                    // Remove duplicate recipes and limit to 9
+                    const unique = [];
+                    const seen = new Set();
+                    for (const meal of combined) {
+                        if (!seen.has(meal.idMeal) && unique.length < 9) {
+                            seen.add(meal.idMeal);
+                            unique.push(meal);
+                        }
+                    }
+                    
+                    // Update state and display recipes
+                    state.searchResults = unique;
+                    state.hasSearched = true;
+                    renderResults(unique);
+                    
+                } catch (error) {
+                    console.error('Failed to load popular recipes:', error);
+                    // Fall back to default empty state if error occurs
+                    $defaultState.style.display = 'flex';
+                    $recipeGrid.style.display = 'none';
+                }
+            }
 
             // ──────────────── RENDER: SKELETONS ────────────────
             function renderSkeletons(count = 6) {
@@ -1603,21 +1663,24 @@
                 const heartStroke = favorited ? '#ffb3b3' : 'currentColor';
                 return `
                 <div class="recipe-card" style="animation-delay:${index * 0.07}s;" data-meal-id="${meal.idMeal}">
-                  <div class="card-image-wrap">
+                <div class="card-image-wrap">
                     <img class="card-image" src="${meal.strMealThumb || ''}" alt="${meal.strMeal}" loading="lazy">
                     <div class="card-image-gradient"></div>
                     <button class="favorite-btn ${heartClass}" data-action="favorite" data-meal-id="${meal.idMeal}" aria-label="${favorited ? 'Remove from favorites' : 'Add to favorites'}">
-                      <svg viewBox="0 0 24 24" fill="${heartFill}" stroke="${heartStroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <svg viewBox="0 0 24 24" fill="${heartFill}" stroke="${heartStroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-                      </svg>
+                    </svg>
                     </button>
-                  </div>
-                  <div class="card-body">
+                </div>
+                <div class="card-body">
                     <div class="card-category">${meal.strCategory || 'Recipe'}</div>
                     <h3 class="card-title">${meal.strMeal}</h3>
                     <div class="card-cuisine">${meal.strArea || 'International'} Cuisine</div>
-                    <button class="btn-view" data-action="view" data-meal-id="${meal.idMeal}">View Recipe</button>
-                  </div>
+                    <div style="display: flex; gap: 8px; margin-top: 12px;">
+                    <button class="btn-view" data-action="view" data-meal-id="${meal.idMeal}" style="flex: 1;">📖 View Recipe</button>
+                    <button class="btn-tutorial" data-action="tutorial" data-meal-name="${meal.strMeal}" style="flex: 1;">▶ Watch Tutorial</button>
+                    </div>
+                </div>
                 </div>`;
             }
 
@@ -1651,6 +1714,17 @@
 
                         if (meal) {
                             openModal(meal);
+                        }
+                    });
+                });
+
+                // Tutorial buttons
+                document.querySelectorAll('[data-action="tutorial"]').forEach(btn => {
+                    btn.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        const mealName = this.getAttribute('data-meal-name');
+                        if (mealName) {
+                            watchTutorial(mealName);
                         }
                     });
                 });
@@ -1905,6 +1979,15 @@
                 `;
             }
 
+            function watchTutorial(mealName) {
+                // This attempts to play the first video directly (may not always work)
+                const searchQuery = encodeURIComponent(`${mealName} recipe tutorial`);
+                const youtubeUrl = `https://www.youtube.com/results?search_query=${searchQuery}`;
+                
+                window.open(youtubeUrl, '_blank', 'noopener,noreferrer');
+                showToast(`🔍 Searching YouTube for "${mealName}" tutorial...`);
+            }
+
             // ──────────────── MODAL ────────────────
             function openModal(meal) {
                 $modalImage.src = meal.strMealThumb || '';
@@ -2021,10 +2104,8 @@
             function init() {
                 updateCookbookBadge();
                 renderHistoryChips();
-                // Default state is already visible
-                $defaultState.style.display = 'flex';
-                $recipeGrid.style.display = 'none';
-                $emptyState.style.display = 'none';
+                // Load popular recipes on page load instead of showing empty state
+                loadPopularRecipes();
                 $tabDiscover.classList.add('active');
                 $tabCookbook.classList.remove('active');
             }
